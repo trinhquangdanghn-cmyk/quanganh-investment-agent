@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 # ---------------------------------------------------------
 load_dotenv()
 st.set_page_config(
-    page_title="QuangAnh Investment Agent", 
+    page_title="AI Agent", 
     page_icon="📈", 
     layout="wide"
 )
@@ -84,7 +84,7 @@ def get_crypto_prices():
 # ---------------------------------------------------------
 # 2. THANH SIDEBAR
 # ---------------------------------------------------------
-st.sidebar.title("📌 Investment Agent")
+st.sidebar.title("📌 AI Agent")
 
 # 1. Bảng giá thị trường (Tự động cập nhật)
 st.sidebar.subheader("📊 Giá Thị Trường (OKX - Realtime)")
@@ -206,7 +206,7 @@ if prompt:
         st.error("Chưa cài đặt GEMINI_API_KEY trong file .env!")
     else:
         system_instruction_text = f"""
-        Bạn là QuangAnh Investment Agent - cố vấn tài chính chuyên nghiệp.
+        Bạn là AI Agent - cố vấn tài chính chuyên nghiệp.
         Dữ liệu giá thị trường cập nhật trực tiếp từ OKX:
         - Bitcoin (BTC): {prices['BTC']}
         - Ethereum (ETH): {prices['ETH']}
