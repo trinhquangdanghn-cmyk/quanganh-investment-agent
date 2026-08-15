@@ -16,7 +16,16 @@ st.set_page_config(
     page_icon="📈", 
     layout="wide"
 )
-
+# Thêm cấu hình PWA cho giao diện ứng dụng di động
+st.markdown(
+    """
+    <link rel="manifest" href="/manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Investment Agent">
+    """,
+    unsafe_allow_html=True
+)
 gemini_key = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=gemini_key) if gemini_key else None
 
