@@ -6,36 +6,6 @@ import streamlit as st
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
-
-# Chèn CSS ẩn biểu tượng edit / toolbar của Streamlit
-
-
-
-st.markdown(
-    """
-    <style>
-    /* 1. Hiển thị Header và Menu 3 chấm (#MainMenu) để kích hoạt PWA */
-    header[data-testid="stHeader"] {
-        visibility: visible !important;
-    }
-    #MainMenu {
-        visibility: visible !important;
-        display: block !important;
-    }
-
-    /* 2. Chỉ ẩn các nút công cụ phụ (như nút Share, Stop) */
-    [data-testid="stHeaderActionElements"] button:not(#MainMenu) {
-        display: none !important;
-    }
-
-    /* 3. Ẩn thanh công cụ phụ trên các widget */
-    [data-testid="stElementToolbar"] {
-        display: none !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
 # ---------------------------------------------------------
 # 1. CẤU HÌNH HỆ THỐNG & GEMINI API
 # ---------------------------------------------------------
