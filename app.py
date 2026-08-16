@@ -7,6 +7,22 @@ from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
+# Chèn CSS ẩn biểu tượng edit / toolbar của Streamlit
+st.markdown(
+    """
+    <style>
+    /* Ẩn các nút chỉnh sửa/toolbar trên widget */
+    [data-testid="stElementToolbar"] {
+        display: none !important;
+    }
+    /* Ẩn biểu tượng cây bút / nút sửa nếu nằm trong thanh công cụ góc trên */
+    button[aria-label="Edit"], button[title="Edit"] {
+        display: none !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 # ---------------------------------------------------------
 # 1. CẤU HÌNH HỆ THỐNG & GEMINI API
 # ---------------------------------------------------------
