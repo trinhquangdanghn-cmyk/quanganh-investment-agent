@@ -8,12 +8,12 @@ from google.genai import types
 from dotenv import load_dotenv
 
 # Chèn CSS ẩn biểu tượng edit / toolbar của Streamlit
-import streamlit as st
+
 
 st.markdown(
     """
     <style>
-    /* Cho phép Header và Menu 3 chấm (#MainMenu) hiển thị bình thường */
+    /* Hiển thị Header và Menu 3 chấm (#MainMenu) */
     header[data-testid="stHeader"] {
         visibility: visible !important;
     }
@@ -21,12 +21,16 @@ st.markdown(
         visibility: visible !important;
     }
 
-    /* Ẩn riêng các nút công cụ trên Header (bao gồm icon Cây bút / Edit, Stop, Share) */
-    [data-testid="stHeaderActionElements"] {
+    /* Ẩn chính xác icon Cây bút / Edit và các nút công cụ đi kèm trên Header */
+    [data-testid="stHeaderActionElements"],
+    button[title*="Edit"],
+    button[aria-label*="Edit"],
+    a[title*="Edit"],
+    .stAppHeader [data-testid="stActionButton"] {
         display: none !important;
     }
 
-    /* Ẩn thanh công cụ / icon chỉnh sửa xuất hiện trên các widget bên dưới */
+    /* Ẩn thanh công cụ chỉnh sửa xuất hiện trên các widget bên dưới */
     [data-testid="stElementToolbar"] {
         display: none !important;
     }
