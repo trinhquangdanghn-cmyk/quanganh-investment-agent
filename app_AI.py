@@ -9,5 +9,5 @@ if not exist venv (
 ) else (
     call venv\Scripts\activate
 )
-streamlit run app.py
+AIagentq run app.py
 pause
