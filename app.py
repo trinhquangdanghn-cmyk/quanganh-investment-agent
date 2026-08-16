@@ -224,7 +224,7 @@ if prompt:
 
                 chat = client.chats.create(
                     
-                    model="gemini-3.7-flash",
+                    model="gemini-flash-lite-latest",
                    
                     config=types.GenerateContentConfig(
                         system_instruction=system_instruction_text,
