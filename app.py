@@ -10,27 +10,26 @@ from dotenv import load_dotenv
 # Chèn CSS ẩn biểu tượng edit / toolbar của Streamlit
 
 
+
 st.markdown(
     """
     <style>
-    /* 1. Đảm bảo Header và Menu 3 chấm vẫn xuất hiện */
+    /* 1. Hiển thị Header và Menu 3 chấm (#MainMenu) để kích hoạt PWA */
     header[data-testid="stHeader"] {
         visibility: visible !important;
     }
     #MainMenu {
         visibility: visible !important;
+        display: block !important;
     }
 
-    /* 2. Ẩn toàn bộ nút công cụ góc phải Header ngoại trừ Menu 3 chấm */
-    .stAppHeader [data-testid="stHeaderActionElements"] > *:not(#MainMenu) {
+    /* 2. Chỉ ẩn các nút công cụ phụ (như nút Share, Stop) */
+    [data-testid="stHeaderActionElements"] button:not(#MainMenu) {
         display: none !important;
     }
 
-    /* 3. Đè ẩn trực tiếp các thẻ link/button chứa icon Edit (Cây bút) */
-    a[href*="github.com"], 
-    button[aria-label*="Edit"], 
-    a[aria-label*="Edit"],
-    [data-testid="stHeaderEditButton"] {
+    /* 3. Ẩn thanh công cụ phụ trên các widget */
+    [data-testid="stElementToolbar"] {
         display: none !important;
     }
     </style>
