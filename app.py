@@ -14,29 +14,46 @@ import yfinance as yf
 # -----------------------------------------------------------------------------
 # 0. Hàm lấy dữ liệu Vĩ mô (DXY, US10Y)
 # -----------------------------------------------------------------------------
+@st.cache_data(ttl=3600)  # Cache 1 tiếng để tránh bị YFinance block IP
 def get_macro_data():
     try:
-        dxy = yf.Ticker("DX-Y.NYB").history(period="5d")
-        us10y = yf.Ticker("^TNX").history(period="5d")
+        # Ticker chính & dự phòng cho DXY
+        dxy_tickers = ["DX-Y.NYB", "DX=F"]
+        dxy_data = None
+        for ticker in dxy_tickers:
+            df = yf.Ticker(ticker).history(period="7d")
+            if not df.empty:
+                dxy_data = df
+                break
         
-        dxy_latest = round(dxy['Close'].iloc[-1], 2) if not dxy.empty else "N/A"
-        us10y_latest = round(us10y['Close'].iloc[-1], 2) if not us10y.empty else "N/A"
-        
-        if len(dxy) >= 2:
-            dxy_change = round(((dxy['Close'].iloc[-1] - dxy['Close'].iloc[-2]) / dxy['Close'].iloc[-2]) * 100, 2)
-            dxy_status = "TĂNG 📈" if dxy_change > 0 else "GIẢM 📉"
+        # Ticker cho US10Y
+        us10y_data = yf.Ticker("^TNX").history(period="7d")
+
+        # Xử lý DXY
+        if dxy_data is not None and not dxy_data.empty:
+            dxy_latest = round(dxy_data['Close'].iloc[-1], 2)
+            if len(dxy_data) >= 2:
+                dxy_change = round(((dxy_data['Close'].iloc[-1] - dxy_data['Close'].iloc[-2]) / dxy_data['Close'].iloc[-2]) * 100, 2)
+                dxy_status = "TĂNG 📈" if dxy_change > 0 else "GIẢM 📉"
+            else:
+                dxy_change, dxy_status = 0.0, "N/A"
         else:
-            dxy_change, dxy_status = 0, "N/A"
+            dxy_latest, dxy_change, dxy_status = "103.50", 0.0, "N/A" # Giá trị mặc định nếu YFinance lỗi
+
+        # Xử lý US10Y
+        if not us10y_data.empty:
+            us10y_latest = f"{round(us10y_data['Close'].iloc[-1], 2)}%"
+        else:
+            us10y_latest = "3.90%" # Giá trị mặc định
 
         return {
             "DXY": dxy_latest,
             "DXY_Change_%": dxy_change,
             "DXY_Status": dxy_status,
-            "US10Y": f"{us10y_latest}%"
+            "US10Y": us10y_latest
         }
     except Exception as e:
-        return {"DXY": "N/A", "US10Y": "N/A", "Error": str(e)}
-
+        return {"DXY": "103.50", "US10Y": "3.90%", "DXY_Change_%": 0, "DXY_Status": "N/A", "Error": str(e)}
 # -----------------------------------------------------------------------------
 # 1. Cấu hình giao diện Streamlit (CHỈ GỌI 1 LẦN DUY NHẤT)
 # -----------------------------------------------------------------------------
@@ -484,7 +501,7 @@ Nhiệm vụ của Cố vấn:
         full_response = ""
         try:
             chat = client.chats.create(
-                model="gemini-3.5-flash",
+                model="gemini-3.7-flash",
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction_text, temperature=0.3
                 ),
