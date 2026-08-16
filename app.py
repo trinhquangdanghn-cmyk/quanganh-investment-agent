@@ -11,13 +11,10 @@ from dotenv import load_dotenv
 st.markdown(
     """
     <style>
-    /* Ẩn các nút chỉnh sửa/toolbar trên widget */
-    [data-testid="stElementToolbar"] {
-        display: none !important;
-    }
-    /* Ẩn biểu tượng cây bút / nút sửa nếu nằm trong thanh công cụ góc trên */
-    button[aria-label="Edit"], button[title="Edit"] {
-        display: none !important;
+    /* Ẩn Header chính của Streamlit */
+    header[data-testid="stHeader"] {
+        visibility: hidden;
+        height: 0%;
     }
     </style>
     """,
