@@ -11,11 +11,19 @@ from dotenv import load_dotenv
 st.markdown(
     """
     <style>
-    /* Ẩn Header chính của Streamlit */
+    /* Vẫn giữ Header để trình duyệt hiển thị nút Cài đặt App (PWA) */
     header[data-testid="stHeader"] {
-        visibility: hidden;
-        height: 0%;
+        visibility: visible !important;
+        background: transparent !important;
     }
+
+    /* Ẩn riêng nút 3 chấm Menu chính và nút Manage App */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    [data-testid="stHeaderActionElements"] {display: none !important;}
+    
+    /* Ẩn thanh công cụ / biểu tượng Edit trên các widget */
+    [data-testid="stElementToolbar"] {display: none !important;}
     </style>
     """,
     unsafe_allow_html=True
