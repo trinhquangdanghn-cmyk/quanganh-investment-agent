@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 
 # Chèn CSS ẩn biểu tượng edit / toolbar của Streamlit
 
-
 st.markdown(
     """
     <style>
@@ -21,16 +20,21 @@ st.markdown(
         visibility: visible !important;
     }
 
-    /* Ẩn chính xác icon Cây bút / Edit và các nút công cụ đi kèm trên Header */
-    [data-testid="stHeaderActionElements"],
-    button[title*="Edit"],
-    button[aria-label*="Edit"],
-    a[title*="Edit"],
-    .stAppHeader [data-testid="stActionButton"] {
+    /* Ẩn vùng chứa các nút hành động trên Header (Edit app, Share, Status) */
+    div[data-testid="stHeaderActionElements"] {
         display: none !important;
     }
 
-    /* Ẩn thanh công cụ chỉnh sửa xuất hiện trên các widget bên dưới */
+    /* Ẩn trực tiếp tất cả các nút Edit / Bút chì dựa trên thuộc tính ARIA và Icon */
+    button[aria-label*="Edit"],
+    button[title*="Edit"],
+    a[aria-label*="Edit"],
+    a[title*="Edit"],
+    button[data-testid="stHeaderEditButton"] {
+        display: none !important;
+    }
+
+    /* Ẩn thanh công cụ phụ trên các widget */
     [data-testid="stElementToolbar"] {
         display: none !important;
     }
