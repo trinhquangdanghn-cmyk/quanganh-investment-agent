@@ -9,10 +9,11 @@ from dotenv import load_dotenv
 
 # Chèn CSS ẩn biểu tượng edit / toolbar của Streamlit
 
+
 st.markdown(
     """
     <style>
-    /* Hiển thị Header và Menu 3 chấm (#MainMenu) */
+    /* 1. Đảm bảo Header và Menu 3 chấm vẫn xuất hiện */
     header[data-testid="stHeader"] {
         visibility: visible !important;
     }
@@ -20,22 +21,16 @@ st.markdown(
         visibility: visible !important;
     }
 
-    /* Ẩn vùng chứa các nút hành động trên Header (Edit app, Share, Status) */
-    div[data-testid="stHeaderActionElements"] {
+    /* 2. Ẩn toàn bộ nút công cụ góc phải Header ngoại trừ Menu 3 chấm */
+    .stAppHeader [data-testid="stHeaderActionElements"] > *:not(#MainMenu) {
         display: none !important;
     }
 
-    /* Ẩn trực tiếp tất cả các nút Edit / Bút chì dựa trên thuộc tính ARIA và Icon */
-    button[aria-label*="Edit"],
-    button[title*="Edit"],
+    /* 3. Đè ẩn trực tiếp các thẻ link/button chứa icon Edit (Cây bút) */
+    a[href*="github.com"], 
+    button[aria-label*="Edit"], 
     a[aria-label*="Edit"],
-    a[title*="Edit"],
-    button[data-testid="stHeaderEditButton"] {
-        display: none !important;
-    }
-
-    /* Ẩn thanh công cụ phụ trên các widget */
-    [data-testid="stElementToolbar"] {
+    [data-testid="stHeaderEditButton"] {
         display: none !important;
     }
     </style>
