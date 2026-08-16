@@ -501,7 +501,7 @@ Nhiệm vụ của Cố vấn:
         full_response = ""
         try:
             chat = client.chats.create(
-                model="gemini-3.7-flash",
+                model="gemini-3.5-flash",
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction_text, temperature=0.3
                 ),
