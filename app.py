@@ -12,20 +12,11 @@ from dotenv import load_dotenv
 # ---------------------------------------------------------
 load_dotenv()
 st.set_page_config(
-    page_title="AI Agent", 
+    page_title="QuangAnh Investment Agent", 
     page_icon="📈", 
     layout="wide"
 )
-# Thêm cấu hình PWA cho giao diện ứng dụng di động
-st.markdown(
-    """
-    <link rel="manifest" href="/manifest.json">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Investment Agent">
-    """,
-    unsafe_allow_html=True
-)
+
 gemini_key = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=gemini_key) if gemini_key else None
 
@@ -84,7 +75,7 @@ def get_crypto_prices():
 # ---------------------------------------------------------
 # 2. THANH SIDEBAR
 # ---------------------------------------------------------
-st.sidebar.title("📌 AI Agent")
+st.sidebar.title("📌 Investment Agent")
 
 # 1. Bảng giá thị trường (Tự động cập nhật)
 st.sidebar.subheader("📊 Giá Thị Trường (OKX - Realtime)")
@@ -206,7 +197,7 @@ if prompt:
         st.error("Chưa cài đặt GEMINI_API_KEY trong file .env!")
     else:
         system_instruction_text = f"""
-        Bạn là AI Agent - cố vấn tài chính chuyên nghiệp.
+        Bạn là QuangAnh Investment Agent - cố vấn tài chính chuyên nghiệp.
         Dữ liệu giá thị trường cập nhật trực tiếp từ OKX:
         - Bitcoin (BTC): {prices['BTC']}
         - Ethereum (ETH): {prices['ETH']}
@@ -232,7 +223,9 @@ if prompt:
                 ]
 
                 chat = client.chats.create(
-                    model="gemini-flash-lite-latest",
+                    
+                    model="gemini-3.7-flash",
+                   
                     config=types.GenerateContentConfig(
                         system_instruction=system_instruction_text,
                         temperature=0.7,
