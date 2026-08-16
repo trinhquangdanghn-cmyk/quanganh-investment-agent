@@ -1,7 +1,6 @@
 import json
 import os
 
-# import ccxt
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -10,6 +9,33 @@ import pandas as pd
 import pandas_ta as ta
 import requests
 import streamlit as st
+import yfinance as yf
+
+# -----------------------------------------------------------------------------
+# 0. Hàm lấy dữ liệu Vĩ mô (DXY, US10Y)
+# -----------------------------------------------------------------------------
+def get_macro_data():
+    try:
+        dxy = yf.Ticker("DX-Y.NYB").history(period="5d")
+        us10y = yf.Ticker("^TNX").history(period="5d")
+        
+        dxy_latest = round(dxy['Close'].iloc[-1], 2) if not dxy.empty else "N/A"
+        us10y_latest = round(us10y['Close'].iloc[-1], 2) if not us10y.empty else "N/A"
+        
+        if len(dxy) >= 2:
+            dxy_change = round(((dxy['Close'].iloc[-1] - dxy['Close'].iloc[-2]) / dxy['Close'].iloc[-2]) * 100, 2)
+            dxy_status = "TĂNG 📈" if dxy_change > 0 else "GIẢM 📉"
+        else:
+            dxy_change, dxy_status = 0, "N/A"
+
+        return {
+            "DXY": dxy_latest,
+            "DXY_Change_%": dxy_change,
+            "DXY_Status": dxy_status,
+            "US10Y": f"{us10y_latest}%"
+        }
+    except Exception as e:
+        return {"DXY": "N/A", "US10Y": "N/A", "Error": str(e)}
 
 # -----------------------------------------------------------------------------
 # 1. Cấu hình giao diện Streamlit (CHỈ GỌI 1 LẦN DUY NHẤT)
@@ -30,17 +56,32 @@ api_key = os.getenv("GEMINI_API_KEY")
 CHAT_SESSIONS_FILE = "chat_sessions.json"
 
 # -----------------------------------------------------------------------------
-# 2. System Prompt nghiêm ngặt (Khóa quan điểm IOU của Pi Network)
+# 2. System Prompt nghiêm ngặt
 # -----------------------------------------------------------------------------
 STRICT_SYSTEM_PROMPT = """
 Bạn là QuangAnh Investment Agent - Cố vấn tài chính định lượng cao cấp.
 
-[QUY TẮC BẮT BUỘC 100% VỀ PI NETWORK]:
+[QUY TẮC BẮT BUỘC 100% VỀ PI NETWORK (NẾU ĐỒNG COIN ĐANG CHỌN LÀ PI)]:
 1. Pi Network (PI) ĐÃ CHÍNH THỨC RA MẮT OPEN MAINNET THỰC TẾ và giao dịch trực tiếp trên OKX (PI/USDT).
 2. TUYỆT ĐỐI KHÔNG sử dụng các từ: "IOU", "Futures", "Hợp đồng tương lai", "Chưa niêm yết".
 3. Mọi phân tích kỹ thuật và dòng tiền của PI dựa hoàn toàn trên dữ liệu Mainnet thực tế từ OKX.
+
+[QUY TẮC PHÂN TÍCH GIÁ THỰC TẾ & SO SÁNH TƯƠNG QUAN]:
+1. COIN TRỌNG TÂM: Mọi phân tích kỹ thuật, chỉ báo (RSI, ATR) và mốc giao dịch (Entry, SL, TP) PHẢI lấy coin đang chọn trong Context làm trọng tâm chính.
+2. SO SÁNH LÍNH HOẠT: Khi người dùng yêu cầu so sánh hoặc đối chiếu (ví dụ: so sánh với BTC, ETH hay DXY), bạn ĐƯỢC PHÉP sử dụng dữ liệu vĩ mô và chỉ số các coin khác có trong Context để phân tích tương quan dòng tiền.
+3. MINH BẠCH DỮ LIỆU: TUYỆT ĐỐI KHÔNG tự bịa giá. Nếu giá hoặc chỉ báo của coin trả về là "N/A", phải thông báo rõ ràng dữ liệu real-time chưa sẵn sàng.
+
 """
 
+macro_info = get_macro_data()
+
+# --- HIỂN THỊ CHỈ SỐ VĨ MÔ TRÊN SIDEBAR ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("🌐 Chỉ Số Vĩ Mô & Lãi Suất")
+col_m1, col_m2 = st.sidebar.columns(2)
+col_m1.metric("DXY Index", f"{macro_info.get('DXY')}", f"{macro_info.get('DXY_Change_%')}%")
+col_m2.metric("Trái Phiếu US10Y", f"{macro_info.get('US10Y')}")
+st.sidebar.caption("🏛️ **Lãi suất FED:** `5.25% - 5.50%`")
 
 # -----------------------------------------------------------------------------
 # 3. Quản lý Lịch sử Chat (JSON)
@@ -54,14 +95,12 @@ def load_chat_sessions():
             return []
     return []
 
-
 def save_chat_sessions(sessions):
     try:
         with open(CHAT_SESSIONS_FILE, "w", encoding="utf-8") as f:
             json.dump(sessions, f, ensure_ascii=False, indent=4)
     except Exception as e:
         st.error(f"Lỗi lưu file lịch sử: {e}")
-
 
 if "chat_sessions" not in st.session_state:
     st.session_state.chat_sessions = load_chat_sessions()
@@ -75,26 +114,32 @@ if not st.session_state.chat_sessions:
 if "active_index" not in st.session_state:
     st.session_state.active_index = 0
 
-
 # -----------------------------------------------------------------------------
-# 4. Fetch Data APIs (OKX Mainnet, Alternative.me & Dòng tiền Nâng cao)
+# 4. API Fetching linh hoạt cho BẤT KỲ đồng coin nào
 # -----------------------------------------------------------------------------
-@st.cache_data(ttl=5)
-def get_realtime_prices():
-    symbols = {"BTC": "BTC-USDT", "ETH": "ETH-USDT", "PI": "PI-USDT"}
-    prices = {}
-    for coin, inst_id in symbols.items():
-        url = f"https://www.okx.com/api/v5/market/ticker?instId={inst_id}"
-        try:
-            res = requests.get(url, timeout=3).json()
-            if res.get("code") == "0" and res.get("data"):
-                prices[coin] = float(res["data"][0]["last"])
-            else:
-                prices[coin] = "N/A"
-        except Exception:
-            prices[coin] = "N/A"
-    return prices
+@st.cache_data(ttl=10)
+def get_single_coin_price(coin_symbol):
+    clean_coin = coin_symbol.upper().replace("-USDT", "").replace("USDT", "").strip()
+    inst_id = f"{clean_coin}-USDT"
+    
+    # 1. Fetch OKX Spot
+    url_okx = f"https://www.okx.com/api/v5/market/ticker?instId={inst_id}"
+    try:
+        res = requests.get(url_okx, timeout=3).json()
+        if res.get("code") == "0" and res.get("data"):
+            return float(res["data"][0]["last"])
+    except Exception:
+        pass
 
+    # 2. Fallback Binance Spot
+    try:
+        res_b = requests.get(f"https://api.binance.com/api/v3/ticker/price?symbol={clean_coin}USDT", timeout=3).json()
+        if "price" in res_b:
+            return float(res_b["price"])
+    except Exception:
+        pass
+
+    return "N/A"
 
 @st.cache_data(ttl=300)
 def get_fear_and_greed_index():
@@ -108,9 +153,10 @@ def get_fear_and_greed_index():
         pass
     return "N/A"
 
-
 @st.cache_data(ttl=60)
-def get_okx_candlesticks(inst_id="BTC-USDT", bar="1D", limit=100):
+def get_okx_candlesticks(coin_symbol, bar="1D", limit=100):
+    clean_coin = coin_symbol.upper().replace("-USDT", "").replace("USDT", "").strip()
+    inst_id = f"{clean_coin}-USDT"
     url = f"https://www.okx.com/api/v5/market/candles?instId={inst_id}&bar={bar}&limit={limit}"
     try:
         response = requests.get(url, timeout=5)
@@ -120,15 +166,8 @@ def get_okx_candlesticks(inst_id="BTC-USDT", bar="1D", limit=100):
             df = pd.DataFrame(
                 raw_candles,
                 columns=[
-                    "timestamp",
-                    "open",
-                    "high",
-                    "low",
-                    "close",
-                    "vol",
-                    "volCcy",
-                    "volCcyQuote",
-                    "confirm",
+                    "timestamp", "open", "high", "low", "close", "vol",
+                    "volCcy", "volCcyQuote", "confirm",
                 ],
             )
             for col in ["open", "high", "low", "close", "vol"]:
@@ -139,12 +178,10 @@ def get_okx_candlesticks(inst_id="BTC-USDT", bar="1D", limit=100):
         pass
     return pd.DataFrame()
 
-
-# --- BỔ SUNG: API DÒNG TIỀN NÂNG CAO (TAKER FLOW & PHÁI SINH) ---
 @st.cache_data(ttl=60)
 def get_okx_taker_volume(coin="BTC"):
-    """Lấy tỷ lệ lực Mua/Bán chủ động (Taker Buy/Sell Ratio)"""
-    url = f"https://www.okx.com/api/v5/rubik/stat/taker-volume?ccy={coin}&contractType=SWAP"
+    clean_coin = coin.upper().replace("-USDT", "").replace("USDT", "").strip()
+    url = f"https://www.okx.com/api/v5/rubik/stat/taker-volume?ccy={clean_coin}&contractType=SWAP"
     try:
         res = requests.get(url, timeout=3).json()
         if res.get("code") == "0" and res.get("data"):
@@ -170,26 +207,22 @@ def get_okx_taker_volume(coin="BTC"):
         pass
     return {"flow_status": "N/A", "taker_ratio": 1.0}
 
-
 @st.cache_data(ttl=300)
-def get_okx_derivatives_data(inst_id="BTC-USDT-SWAP"):
-    """Lấy Funding Rate & Open Interest (Hợp đồng mở)"""
-    url_funding = (
-        f"https://www.okx.com/api/v5/public/funding-rate?instId={inst_id}"
-    )
+def get_okx_derivatives_data(coin="BTC"):
+    clean_coin = coin.upper().replace("-USDT", "").replace("USDT", "").strip()
+    inst_id = f"{clean_coin}-USDT-SWAP"
+    url_funding = f"https://www.okx.com/api/v5/public/funding-rate?instId={inst_id}"
     url_oi = f"https://www.okx.com/api/v5/market/open-interest?instId={inst_id}"
 
     funding_rate = "N/A"
     open_interest = "N/A"
 
     try:
-        # Funding Rate
         res_f = requests.get(url_funding, timeout=3).json()
         if res_f.get("code") == "0" and res_f.get("data"):
             funding_val = float(res_f["data"][0]["fundingRate"]) * 100
             funding_rate = f"{funding_val:+.4f}%"
 
-        # Open Interest
         res_oi = requests.get(url_oi, timeout=3).json()
         if res_oi.get("code") == "0" and res_oi.get("data"):
             oi_val = float(res_oi["data"][0]["oiCcy"])
@@ -199,9 +232,8 @@ def get_okx_derivatives_data(inst_id="BTC-USDT-SWAP"):
 
     return {"funding_rate": funding_rate, "open_interest": open_interest}
 
-
 # -----------------------------------------------------------------------------
-# 5. Thuật toán Chỉ báo Định lượng (Anti Look-Ahead & Z-Score Volume)
+# 5. Thuật toán Chỉ báo Định lượng
 # -----------------------------------------------------------------------------
 def calculate_quant_indicators(df):
     if df.empty or len(df) < 30:
@@ -217,7 +249,6 @@ def calculate_quant_indicators(df):
 
     current_price = close.iloc[-1]
 
-    # Moving Averages
     ma20 = close_prev.rolling(window=20).mean().iloc[-1]
     ma50 = close_prev.rolling(window=50).mean().iloc[-1]
 
@@ -231,11 +262,9 @@ def calculate_quant_indicators(df):
         trend_score = 0.0
         trend_simple = "Đi ngang"
 
-    # RSI
     rsi_series = ta.rsi(close_prev, length=14)
     rsi = rsi_series.iloc[-1] if rsi_series is not None else 50
 
-    # ATR & Levels
     support_30 = low_prev.tail(30).min()
     resistance_30 = high_prev.tail(30).max()
     tr = np.maximum(
@@ -256,14 +285,13 @@ def calculate_quant_indicators(df):
         ),
         "trend_score": trend_score,
         "trend_simple": trend_simple,
-        "support": round(support_30, 2),
-        "resistance": round(resistance_30, 2),
-        "atr": round(atr14, 2),
-        "stop_loss_atr": round(current_price - (2 * atr14), 2),
-        "tp1": round(current_price + (2 * atr14), 2),
-        "tp2": round(current_price + (4 * atr14), 2),
+        "support": round(support_30, 4),
+        "resistance": round(resistance_30, 4),
+        "atr": round(atr14, 4),
+        "stop_loss_atr": round(current_price - (2 * atr14), 4),
+        "tp1": round(current_price + (2 * atr14), 4),
+        "tp2": round(current_price + (4 * atr14), 4),
     }
-
 
 def calculate_volume_metrics(df_1d):
     if df_1d.empty or len(df_1d) < 60:
@@ -277,7 +305,6 @@ def calculate_volume_metrics(df_1d):
     std_20 = vol_usd_prev.tail(20).std()
 
     z_score = (current_vol_usd - mean_20) / (std_20 + 1e-10)
-    vol_percentile = (vol_usd_prev < current_vol_usd).mean() * 100
 
     obv = (np.sign(df_1d["close"].diff()) * df_1d["vol"]).fillna(0).cumsum()
     obv_trend = (
@@ -287,79 +314,24 @@ def calculate_volume_metrics(df_1d):
     )
 
     if z_score >= 2.0:
-        vol_status = f"🔥 BÙNG NỔ CÁ VOI (Z-Score: +{z_score:.1f}σ)"
+        vol_status = f"🔥 THỊ TRƯỜNG MẠNH (Z-Score: +{z_score:.2f}σ)"
     elif z_score <= -1.5:
-        vol_status = f"❄️ CẠN KIỆT THANH KHOẢN (Z-Score: {z_score:.1f}σ)"
+        vol_status = f"❄️ CẠN KIỆT THANH KHOẢN (Z-Score: {z_score:.2f}σ)"
     else:
-        vol_status = f"⚖️ Bình thường (Z-Score: {z_score:.1f}σ)"
+        vol_status = f"⚖️ BÌNH THƯỜNG (Z-Score: {z_score:.2f}σ)"
 
     return {
         "vol_usd_mil": round(current_vol_usd / 1e6, 2),
         "z_score": round(z_score, 2),
-        "vol_percentile": round(vol_percentile, 1),
         "vol_status": vol_status,
         "obv_trend": obv_trend,
     }
 
-
 # -----------------------------------------------------------------------------
-# 6. Xử lý Dữ liệu Đa Khung Thời Gian & Dòng Tiền Thật
-# -----------------------------------------------------------------------------
-realtime_prices = get_realtime_prices()
-fng_index = get_fear_and_greed_index()
-symbols = {"BTC": "BTC-USDT", "ETH": "ETH-USDT", "PI": "PI-USDT"}
-timeframes = ["1D", "4H", "1H"]
-market_data = {}
-
-for name, inst_id in symbols.items():
-    tf_data = {}
-    vol_metrics = {}
-
-    for tf in timeframes:
-        limit_val = 365 if tf == "1D" else 100
-        df = get_okx_candlesticks(inst_id, bar=tf, limit=limit_val)
-        tf_data[tf] = calculate_quant_indicators(df)
-        if tf == "1D":
-            vol_metrics = calculate_volume_metrics(df)
-
-    s_1d = tf_data["1D"].get("trend_score", 0)
-    s_4h = tf_data["4H"].get("trend_score", 0)
-    s_1h = tf_data["1H"].get("trend_score", 0)
-
-    mtf_score = (s_1d * 0.5) + (s_4h * 0.3) + (s_1h * 0.2)
-
-    if mtf_score >= 0.8:
-        mtf_status = "🔥 TĂNG MẠNH (Đồng thuận cao)"
-    elif 0.2 < mtf_score < 0.8:
-        mtf_status = "📈 TĂNG YẾU / Điều chỉnh ngắn"
-    elif mtf_score <= -0.8:
-        mtf_status = "📉 GIẢM MẠNH (Đồng thuận cao)"
-    elif -0.8 < mtf_score < -0.2:
-        mtf_status = "📉 GIẢM YẾU / Hồi phục ngắn"
-    else:
-        mtf_status = "🔄 XUNG ĐỘT KHUNG (Sideway / Rủi ro)"
-
-    # LẤY DỮ LIỆU DÒNG TIỀN NÂNG CAO
-    taker_flow = get_okx_taker_volume(name)
-    swap_id = f"{name}-USDT-SWAP"
-    deriv_data = get_okx_derivatives_data(swap_id)
-
-    market_data[name] = {
-        "price": realtime_prices.get(name, "N/A"),
-        "mtf_score": round(mtf_score, 2),
-        "mtf_status": mtf_status,
-        "vol_metrics": vol_metrics,
-        "taker_flow": taker_flow,  # Mới
-        "deriv_data": deriv_data,  # Mới
-        "tf_1d": tf_data["1D"],
-        "tf_4h": tf_data["4H"],
-        "tf_1h": tf_data["1H"],
-    }
-
-# -----------------------------------------------------------------------------
-# 7. Sidebar: Quản lý Chat & Hiển thị Chỉ báo Thu Gọn (Scrollable)
+# 6. Sidebar: Quản lý Chat & TRA CỨU DYNAMIC COIN
 # -----------------------------------------------------------------------------
 st.sidebar.title("📈 QuangAnh Investment Agent")
+fng_index = get_fear_and_greed_index()
 st.sidebar.caption(f"😱 Fear & Greed Index: **{fng_index}**")
 
 # --- Quản lý Chat ---
@@ -392,97 +364,78 @@ with col_del1:
     if st.button("🗑️ Xóa hội thoại"):
         if len(st.session_state.chat_sessions) > 1:
             st.session_state.chat_sessions.pop(st.session_state.active_index)
-            st.session_state.active_index = max(
-                0, st.session_state.active_index - 1
-            )
+            st.session_state.active_index = max(0, st.session_state.active_index - 1)
         else:
-            st.session_state.chat_sessions = [
-                {"title": "Cuộc trò chuyện mới", "messages": []}
-            ]
+            st.session_state.chat_sessions = [{"title": "Cuộc trò chuyện mới", "messages": []}]
             st.session_state.active_index = 0
         save_chat_sessions(st.session_state.chat_sessions)
         st.rerun()
 
 with col_del2:
     if st.button("⚠️ Xóa tất cả"):
-        st.session_state.chat_sessions = [
-            {"title": "Cuộc trò chuyện mới", "messages": []}
-        ]
+        st.session_state.chat_sessions = [{"title": "Cuộc trò chuyện mới", "messages": []}]
         st.session_state.active_index = 0
         save_chat_sessions(st.session_state.chat_sessions)
         st.rerun()
 
 st.sidebar.markdown("---")
 
-# --- Hiển thị Chỉ Báo Crypto Thu Gọn Trong Expander & Scroll ---
+# --- CHỌN COIN TỰ DO TRÊN SIDEBAR ---
 col_title, col_btn = st.sidebar.columns([3, 1])
 with col_title:
-    st.subheader("🔍 Chỉ Báo Real-time")
+    st.subheader("🔍 Tra Cứu Coin Tự Do")
 with col_btn:
     if st.button("🔄"):
         st.cache_data.clear()
         st.rerun()
 
-for coin, data in market_data.items():
-    price_display = (
-        f"${data['price']:,.4f}"
-        if isinstance(data["price"], (int, float))
-        else data["price"]
-    )
-    vol_info = data["vol_metrics"]
-    taker_info = data["taker_flow"]
-    deriv_info = data["deriv_data"]
+selected_coin = st.sidebar.selectbox(
+    "Chọn hoặc gõ tên đồng Coin:",
+    options=["BTC", "ETH", "SOL", "PI", "BNB", "XRP", "DOGE", "ADA", "NEAR", "SUI", "LINK", "AVAX"],
+    index=0
+)
 
-    # Dùng Expander thu gọn không gian
-    with st.sidebar.expander(f"📌 **{coin}**: {price_display}", expanded=False):
-        with st.container(height=260):
-            st.markdown(f"**Giá Spot OKX:** `{price_display}`")
-            st.caption(
-                f"• **Trạng thái MTF:** {data['mtf_status']} (Score: {data['mtf_score']})"
-            )
+# Fetch dữ liệu động
+coin_price = get_single_coin_price(selected_coin)
+price_display = f"${coin_price:,.4f}" if isinstance(coin_price, (int, float)) else "N/A"
 
-            st.markdown("##### 🌊 Dòng Tiền Chủ Động & Phái Sinh")
-            st.caption(f"• **Taker Flow:** {taker_info.get('flow_status')}")
-            st.caption(
-                f"• **Funding Rate:** `{deriv_info.get('funding_rate')}`"
-            )
-            st.caption(
-                f"• **Hợp đồng mở (OI):** `{deriv_info.get('open_interest')}`"
-            )
+tf_data = {}
+for tf in ["1D", "4H", "1H"]:
+    limit_val = 365 if tf == "1D" else 100
+    df = get_okx_candlesticks(selected_coin, bar=tf, limit=limit_val)
+    tf_data[tf] = calculate_quant_indicators(df)
 
-            st.markdown("##### 📈 Kỹ thuật 1D")
-            st.caption(
-                f"• **RSI (14):** {data['tf_1d'].get('rsi', 'N/A')} ({data['tf_1d'].get('rsi_status', '')})"
-            )
-            st.caption(
-                f"• **HT/KC:** `${data['tf_1d'].get('support', 'N/A')}` / `${data['tf_1d'].get('resistance', 'N/A')}`"
-            )
+df_1d = get_okx_candlesticks(selected_coin, bar="1D", limit=100)
+vol_metrics = calculate_volume_metrics(df_1d)
+taker_info = get_okx_taker_volume(selected_coin)
+deriv_info = get_okx_derivatives_data(selected_coin)
 
-            st.markdown("##### 📊 Volume USD")
-            st.caption(
-                f"• **Volume Status:** {vol_info.get('vol_status', 'N/A')}"
-            )
-            st.caption(f"• **Dòng tiền OBV:** {vol_info.get('obv_trend', 'N/A')}")
+# Hiển thị thông tin coin trên Sidebar
+st.sidebar.markdown(f"### 📌 **{selected_coin.upper()}**: `{price_display}`")
+
+if coin_price != "N/A":
+    st.sidebar.caption(f"• **RSI (14) Khung 1D:** {tf_data['1D'].get('rsi', 'N/A')} ({tf_data['1D'].get('rsi_status', '')})")
+    st.sidebar.caption(f"• **Xu hướng 1D:** {tf_data['1D'].get('trend_simple', 'N/A')}")
+    st.sidebar.caption(f"• **Hỗ trợ / Kháng cự:** `${tf_data['1D'].get('support', 'N/A')}` / `${tf_data['1D'].get('resistance', 'N/A')}`")
+    st.sidebar.caption(f"• **Taker Flow:** {taker_info.get('flow_status')}")
+    st.sidebar.caption(f"• **Funding Rate:** `{deriv_info.get('funding_rate')}`")
+    st.sidebar.caption(f"• **Volume Status:** {vol_metrics.get('vol_status', 'N/A')}")
+else:
+    st.sidebar.warning(f"Chưa lấy được dữ liệu real-time cho {selected_coin.upper()}. Vui lòng kiểm tra lại Ticker.")
 
 # -----------------------------------------------------------------------------
-# 8. Main Area: Chatbot AI Agent
+# 7. Main Area: Chatbot AI Agent
 # -----------------------------------------------------------------------------
-current_session = st.session_state.chat_sessions[
-    st.session_state.active_index
-]
+current_session = st.session_state.chat_sessions[st.session_state.active_index]
 messages = current_session["messages"]
 
 for message in messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input(
-    "Hỏi chiến lược đa khung thời gian & dòng tiền cá voi..."
-):
+if prompt := st.chat_input("Hỏi chiến lược đa khung thời gian & dòng tiền cá voi..."):
     if not messages:
-        current_session["title"] = prompt[:20] + (
-            "..." if len(prompt) > 20 else ""
-        )
+        current_session["title"] = prompt[:20] + ("..." if len(prompt) > 20 else "")
 
     messages.append({"role": "user", "content": prompt})
     save_chat_sessions(st.session_state.chat_sessions)
@@ -490,48 +443,38 @@ if prompt := st.chat_input(
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Ghép Strict System Prompt + Ground Truth Data Đã Nâng Cấp Dòng Tiền
+    # ĐÓNG GÓI CHÍNH XÁC DỮ LIỆU REAL-TIME CỦA COIN ĐANG CHỌN CHO AGENT
     system_instruction_text = f"""
 {STRICT_SYSTEM_PROMPT}
 
-TÂM LÝ THỊ TRƯỜNG & DÒNG TIỀN:
+[DỮ LIỆU VĨ MÔ & LÃI SUẤT REAL-TIME]
+- Lãi suất điều hành FED: 5.25% - 5.50%
+- Chỉ số DXY (Sức mạnh USD): {macro_info.get('DXY')} ({macro_info.get('DXY_Status')} {macro_info.get('DXY_Change_%')}%)
+- Lợi suất trái phiếu Mỹ 10 năm (US10Y): {macro_info.get('US10Y')}
 - Fear & Greed Index: {fng_index}
 
-DỮ LIỆU THỰC TẾ ĐỊNH LƯỢNG (OKX MAINNET):
-1. BTC:
-   - Giá: ${market_data['BTC']['price']}
-   - Lực Mua/Bán chủ động (Taker Flow): {market_data['BTC']['taker_flow']['flow_status']}
-   - Phái sinh: Funding Rate = {market_data['BTC']['deriv_data']['funding_rate']} | Open Interest = {market_data['BTC']['deriv_data']['open_interest']}
-   - MTF Status: {market_data['BTC']['mtf_status']} (Score: {market_data['BTC']['mtf_score']})
-   - Volume USD Z-Score: {market_data['BTC']['vol_metrics'].get('vol_status')} | OBV: {market_data['BTC']['vol_metrics'].get('obv_trend')}
-   - Khung 1D: Trend = {market_data['BTC']['tf_1d'].get('trend_simple')} | RSI = {market_data['BTC']['tf_1d'].get('rsi')}
+[DỮ LIỆU CHÍNH XÁC REAL-TIME DÀNH RIÊNG CHO COIN: {selected_coin.upper()}]
+- Giá Spot Thực Tế: {price_display}
+- Khung 1D: Xu hướng = {tf_data['1D'].get('trend_simple', 'N/A')} | RSI(14) = {tf_data['1D'].get('rsi', 'N/A')} ({tf_data['1D'].get('rsi_status', '')})
+- Vùng Hỗ trợ 30 ngày: ${tf_data['1D'].get('support', 'N/A')}
+- Vùng Kháng cự 30 ngày: ${tf_data['1D'].get('resistance', 'N/A')}
+- Mức Dừng lỗ gợi ý (ATR 2x): ${tf_data['1D'].get('stop_loss_atr', 'N/A')}
+- Mục tiêu Chốt lời TP1: ${tf_data['1D'].get('tp1', 'N/A')} | TP2: ${tf_data['1D'].get('tp2', 'N/A')}
+- Lực Mua/Bán chủ động (Taker Flow): {taker_info.get('flow_status')}
+- Phái sinh: Funding Rate = {deriv_info.get('funding_rate')} | Open Interest = {deriv_info.get('open_interest')}
+- Biến động Volume USD: {vol_metrics.get('vol_status', 'N/A')} | OBV: {vol_metrics.get('obv_trend', 'N/A')}
 
-2. ETH:
-   - Giá: ${market_data['ETH']['price']}
-   - Lực Mua/Bán chủ động (Taker Flow): {market_data['ETH']['taker_flow']['flow_status']}
-   - Phái sinh: Funding Rate = {market_data['ETH']['deriv_data']['funding_rate']} | Open Interest = {market_data['ETH']['deriv_data']['open_interest']}
-   - MTF Status: {market_data['ETH']['mtf_status']} (Score: {market_data['ETH']['mtf_score']})
-   - Volume USD Z-Score: {market_data['ETH']['vol_metrics'].get('vol_status')} | OBV: {market_data['ETH']['vol_metrics'].get('obv_trend')}
-   - Khung 1D: Trend = {market_data['ETH']['tf_1d'].get('trend_simple')} | RSI = {market_data['ETH']['tf_1d'].get('rsi')}
-
-3. PI NETWORK (PI MAINNET OKX):
-   - Giá Spot: ${market_data['PI']['price']}
-   - MTF Status: {market_data['PI']['mtf_status']} (Score: {market_data['PI']['mtf_score']})
-   - Volume USD Z-Score: {market_data['PI']['vol_metrics'].get('vol_status')} | OBV: {market_data['PI']['vol_metrics'].get('obv_trend')}
-   - Khung 1D: Trend = {market_data['PI']['tf_1d'].get('trend_simple')} | RSI = {market_data['PI']['tf_1d'].get('rsi')}
-
-Nhiệm vụ:
-1. Đưa ra nhận định dựa trên sự kết hợp giữa MTF Score, Taker Flow (Lực mua/bán chủ động thực tế) và Funding Rate/OI.
-2. Thiết lập Kế hoạch Giao dịch (Entry, Stop Loss theo ATR, Take Profit).
+Nhiệm vụ của Cố vấn:
+1. Đánh giá bối cảnh Vĩ mô (DXY, US10Y) tác động thế nào tới {selected_coin.upper()}.
+2. Phân tích CHI TIẾT DỰA TRÊN ĐÚNG MỨC GIÁ THỰC TẾ {price_display} CỦA {selected_coin.upper()} NÊU TRÊN.
+3. Thiết lập Kế hoạch Giao dịch cụ thể: Mức giá Entry (xung quanh {price_display}), Điểm Cắt lỗ (Stop Loss) và Chốt lời (Take Profit) dựa đúng trên các mốc Hỗ trợ/Kháng cự/ATR đã cung cấp.
 """
 
     formatted_history = []
     for msg in messages[:-1]:
         role = "user" if msg["role"] == "user" else "model"
         formatted_history.append(
-            types.Content(
-                role=role, parts=[types.Part.from_text(text=msg["content"])]
-            )
+            types.Content(role=role, parts=[types.Part.from_text(text=msg["content"])])
         )
 
     client = genai.Client(api_key=api_key)
@@ -541,7 +484,7 @@ Nhiệm vụ:
         full_response = ""
         try:
             chat = client.chats.create(
-                model="gemini-3.5-flash",
+                model="gemini-3.7-flash",
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction_text, temperature=0.3
                 ),
@@ -552,11 +495,8 @@ Nhiệm vụ:
                 full_response += chunk.text
                 message_placeholder.markdown(full_response + "▌")
 
-            # Lọc sạch từ ngữ IOU nếu Gemini cố vi phạm
             for forbidden_word in ["IOU", "iou", "Futures"]:
-                full_response = full_response.replace(
-                    forbidden_word, "Spot Mainnet"
-                )
+                full_response = full_response.replace(forbidden_word, "Spot Mainnet")
 
             message_placeholder.markdown(full_response)
             messages.append({"role": "assistant", "content": full_response})
